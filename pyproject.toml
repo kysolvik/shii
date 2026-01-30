@@ -6,8 +6,11 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "geopandas>=1.1.2",
+    "libpysal>=4.14.1",
     "matplotlib>=3.10.8",
     "pandas>=3.0.0",
     "python-dotenv>=1.2.1",
+    "scipy>=1.17.0",
     "sodapy>=2.2.0",
+    "spreg>=1.8.5",
 ]
