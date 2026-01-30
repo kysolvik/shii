@@ -5,7 +5,6 @@
 import sodapy
 import pandas
 from datetime import datetime
-import os
 
 def _build_hydrant_where_clause() -> str:
     """Build hydrant complaint where clause for query."""
@@ -26,7 +25,7 @@ def _build_ac_where_clause() -> str:
     """Build AC complaint where clause for query."""
 
     # Build where clause for Fire Hydrant issues
-    where_clause = f"(descriptor = 'Air Conditioning Problem')"
+    where_clause = "(descriptor = 'Air Conditioning Problem')"
 
     return where_clause
 
@@ -34,7 +33,7 @@ def _build_ventilation_where_clause() -> str:
     """Build ventilation complaint where clause for query."""
 
     # Build where clause for Fire Hydrant issues
-    where_clause = f"(starts_with(lower(descriptor), 'ventilation'))"
+    where_clause = "(starts_with(lower(descriptor), 'ventilation'))"
 
     return where_clause
 
@@ -42,9 +41,29 @@ def _build_power_where_clause() -> str:
     """Build power complaint where clause for query."""
 
     # Build where clause for Fire Hydrant issues
-    where_clause = f"(lower(descriptor) = 'power outage')"
-
+    where_clause = "(lower(descriptor) = 'power outage')"
     return where_clause
+
+def _check_dates(start_timestamp: str, end_timestamp: str) -> str:
+    """Check date validity and return dataset ID"""
+
+    if start_timestamp and end_timestamp:
+        start_dt = datetime.fromisoformat(start_timestamp)
+        end_dt = datetime.fromisoformat(end_timestamp)
+
+        if start_dt >= end_dt:
+            raise ValueError("start_timestamp must be before end_timestamp.")
+
+    if start_dt < datetime(2010, 1, 1) or end_dt < datetime(2010, 1, 1):
+        raise ValueError("Data is only available from 2010-01-01 onwards.")
+    elif start_dt > datetime(2020, 1, 1):
+        dataset_id = "erm2-nwe9"
+    elif end_dt > datetime(2020, 1, 1):
+        raise ValueError("Date range spans multiple datasets. Please use dates entirely before or after 2020-01-01.")
+    else:
+        dataset_id = "76ig-c548"
+
+    return dataset_id
 
 def download_311_complaints(
     complaint_type: str = None,
@@ -113,9 +132,11 @@ def download_311_complaints(
         where_clause = ""
 
     # Add date filters if provided
+    # Check dates
+    dataset_id = _check_dates(start_timestamp, end_timestamp)
     if start_timestamp:
         where_clause += f" AND created_date >= '{start_timestamp}'"
-    
+
     if end_timestamp:
         where_clause += f" AND created_date < '{end_timestamp}'"
 
@@ -123,13 +144,13 @@ def download_311_complaints(
         # Fetch data with optional limit
         if limit:
             results = client.get(
-                "erm2-nwe9",
+                dataset_id,
                 where=where_clause,
                 limit=limit,
             )
         else:
             results = client.get(
-                "erm2-nwe9",
+                dataset_id,
                 where=where_clause,
             )
 
