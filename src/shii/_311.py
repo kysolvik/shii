@@ -56,7 +56,7 @@ def _check_dates(start_timestamp: str, end_timestamp: str) -> str:
 
     if start_dt < datetime(2010, 1, 1) or end_dt < datetime(2010, 1, 1):
         raise ValueError("Data is only available from 2010-01-01 onwards.")
-    elif start_dt > datetime(2020, 1, 1):
+    elif start_dt >= datetime(2020, 1, 1):
         dataset_id = "erm2-nwe9"
     elif end_dt > datetime(2020, 1, 1):
         raise ValueError("Date range spans multiple datasets. Please use dates entirely before or after 2020-01-01.")
@@ -110,6 +110,7 @@ def download_311_complaints(
     client = sodapy.Socrata(
         "data.cityofnewyork.us",
         app_token,
+        timeout=600
     )
 
     if complaint_type:
