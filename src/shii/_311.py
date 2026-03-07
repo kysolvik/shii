@@ -14,7 +14,8 @@ def _build_hydrant_where_clause() -> str:
         'Hydrant Running (WC3)',
         'Hydrant Running Full (WA4)',
         'Request to Open A Hydrant (WC4)',
-        'Hydrant Locking Device Request (Use Comments) (WC5)'
+        'Hydrant Locking Device Request (Use Comments) (WC5)',
+        'Fire Hydrant Emergency (FHE)'
     ]
     # Build where clause for Fire Hydrant issues
     where_clause = f"(descriptor in{tuple(problem_detail_filter)})"
