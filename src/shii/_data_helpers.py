@@ -76,3 +76,43 @@ def prepare_all_311_requests(app_token, year_range=range(2010, 2026), output_pat
         print(f"Saved {all_requests_df.shape[0]} records to {output_path}")
 
     return all_requests_df
+
+
+def prepare_ems_calls(app_token, year_range=range(2010, 2026), output_path='ems_calls.csv'):
+    """
+    Download EMS calls for heat incidents
+
+    Parameters
+    ----------
+    app_token : str
+        NYC Open Data API token.
+    year_range : range, optional
+        Range of years to download data for. Default is 2010 to 2025.
+    output_path : str, optional
+        Path to save the output GeoPackage. Default is 'ems_calls.csv'.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame containing all EMS heat incidents
+    """
+
+    if os.path.isfile(output_path):
+        warnings.warn('output_path already exists. Reading and returning.\n'
+                      'To create new download, either delete file or specify different output')
+        heat_df =  pd.read_csv(output_path)
+    else:
+        heat_list = []
+        for y in year_range:
+            heat_incidents = download_heat_incidents(
+                app_token=app_token,
+                limit=1000000,
+                start_timestamp=f"{y}-01-01T00:00:00",
+                end_timestamp=f"{y}-12-31T23:59:59"
+            )
+            print(y, heat_incidents.shape)
+            heat_list.append(heat_incidents)
+        heat_df = pd.concat(heat_list, ignore_index=True)
+        heat_df.to_csv('ems_calls.csv', index=False)
+
+    return heat_df
