@@ -6,8 +6,21 @@ from shapely import Point
 import warnings
 import os
 
-from shii import download_311_requests, download_heat_incidents
+from shii import _311, _weather, _ems, _misc, _zones
 
+
+CDTA_BOROUGH_LOOKUP = {
+    'MN':1,
+    'Manhattan': 1,
+    'BX': 2,
+    'Bronx': 2,
+    'BK': 3,
+    'Brooklyn': 3,
+    'QN': 4,
+    'Queens': 4,
+    'SI': 5,
+    'Staten Island': 5
+}
 
 def convert_to_gdf(df, lon_col='longitude', lat_col='latitude', crs='EPSG:4326'):
     """Convert a DataFrame with longitude and latitude columns to a GeoDataFrame."""
@@ -48,7 +61,7 @@ def prepare_all_311_requests(app_token, year_range=range(2010, 2026), output_pat
             print(f"Downloading {request_type} requests...")
             request_list = []
             for y in year_range:
-                incidents = download_311_requests(
+                incidents = _311.download_311_requests(
                     app_token=app_token,
                     request_type=request_type,
                     limit=1000000,
@@ -104,7 +117,7 @@ def prepare_ems_calls(app_token, year_range=range(2010, 2026), output_path='ems_
     else:
         heat_list = []
         for y in year_range:
-            heat_incidents = download_heat_incidents(
+            heat_incidents = _ems.download_heat_incidents(
                 app_token=app_token,
                 limit=1000000,
                 start_timestamp=f"{y}-01-01T00:00:00",
@@ -116,3 +129,94 @@ def prepare_ems_calls(app_token, year_range=range(2010, 2026), output_path='ems_
         heat_df.to_csv('ems_calls.csv', index=False)
 
     return heat_df
+
+
+
+def preprocess_merged_df(
+        ems_df,
+        all_311_df,
+        date_start='2010-01-01',
+        date_end = '2024-12-31'
+    ):
+    # Get aux data
+    weather_df = _weather.download_weather('2010-01-01T00:00:00', '2025-12-31T23:59:59')
+    hvi_df = _misc.download_hvi()
+    cdtas = _zones.download_community_districts()
+    cdta_population = _zones.download_cd_population()
+
+    hvi_df['borough'] = hvi_df['CDTACode'].astype(str).str[:2]
+    hvi_df['borough_code'] = hvi_df['borough'].map(CDTA_BOROUGH_LOOKUP)
+    hvi_df['cdta'] = hvi_df['borough_code'].astype(str) + hvi_df['CDTACode'].astype(str).str[-2:]
+
+    cdta_population['borough_code'] = cdta_population['borough'].map(CDTA_BOROUGH_LOOKUP)
+    cdta_population['cdta'] = cdta_population['borough_code'].astype(str) + cdta_population['cd_number'].str.zfill(2)
+
+    all_311_df = gpd.read_file('./311_calls.gpkg')
+    cdtas = cdtas.set_crs('EPSG:4326')
+    all_311_df = all_311_df.sjoin(cdtas[['geometry', 'boro_cd']]) 
+    # Separate FHE from rest of hydrant data
+    all_311_df.loc[(all_311_df['descriptor']=='Fire Hydrant Emergency (FHE)'), 'request_type'] = 'fhe'
+
+    # Prep EMS
+    ems_df = ems_df.loc[~ems_df['communitydistrict'].isna()]
+    ems_df['communitydistrict'] = ems_df['communitydistrict'].astype(int).astype(str)
+    ems_df = ems_df.loc[ems_df['final_call_type'] == 'HEAT']
+
+    date_range = pd.date_range(date_start, date_end)
+    date_df = pd.DataFrame({'date':date_range}).set_index('date')
+
+    # Get 311 counts by cdta
+    cdta_311_counts = all_311_df.groupby(['boro_cd', 'date', 'complaint_type']).size()
+    cdta_311_counts.name = '311_counts'
+    cdta_311_counts = cdta_311_counts.reset_index()
+    cdta_311_counts = cdta_311_counts.rename(columns={'boro_cd':'cdta'})
+    cdta_311_counts = cdta_311_counts.pivot(index=['cdta','date'], columns='complaint_type')['311_counts'].fillna(0).reset_index()
+    all_dfs = []
+    for cdta in cdta_311_counts['cdta'].unique():
+        cdta_count = cdta_311_counts.loc[cdta_311_counts['cdta']==cdta].set_index('date').join(date_df, how='right')
+        cdta_count['cdta']= cdta
+        all_dfs.append(cdta_count)
+    cdta_311_counts_filled = pd.concat(all_dfs).fillna(0)
+
+    all_dates = weather_df.index.unique()
+    all_cdtas = cdtas['boro_cd'].unique()
+
+    # Merge in weather
+    full_index = pd.MultiIndex.from_product([all_dates, all_cdtas], names=['date', 'cdta'])
+    cdta_311_complete = cdta_311_counts_filled.reset_index().set_index(['date', 'cdta']).reindex(full_index, fill_value=0).reset_index()
+    cdta_311_weather = cdta_311_complete.merge(weather_df, left_on='date', right_on='time',how='left')
+
+    # Merge in HVI and population data
+    hvi_df = hvi_df.groupby('cdta')[['HVI_RANK','SURFACE_TEMP','MEDIAN_INCOME','GREENSPACE','PCT_HOUSEHOLDS_AC','PCT_BLACK_POP']].mean()
+    hvi_df = hvi_df.reset_index().merge(cdta_population[['cdta', '_2010_population']], on='cdta').rename(columns={'_2010_population': 'population'})
+    hvi_df['population'] = hvi_df['population'].astype(float)
+    cdta_311_hvi_weather = cdta_311_weather.merge(hvi_df, on='cdta', how='inner')
+
+    # Get heat counts by cdta
+    ems_df['datetime'] = pd.to_datetime(ems_df['incident_datetime'])
+    ems_df['date'] = pd.to_datetime(ems_df['datetime'].dt.date)
+    heat_inc_count = (ems_df
+                      .groupby(['communitydistrict', 'date'])
+                      .size()
+                      .rename('heat_ems_count')
+                      ).reset_index()
+    all_dfs = []
+    for cdta in heat_inc_count['communitydistrict'].unique():
+        cdta_count = heat_inc_count.loc[heat_inc_count['communitydistrict']==cdta].set_index('date').join(date_df, how='right')
+        cdta_count['communitydistrict']= cdta
+        all_dfs.append(cdta_count)
+    heat_inc_count_filled = pd.concat(all_dfs).fillna(0)
+
+    # Merge in heat heat ems data
+    cdta_alldata = cdta_311_hvi_weather.set_index(['cdta', 'date']).join(heat_inc_count_filled)
+    cdta_alldata['population'] = cdta_alldata['population'].astype(float)
+
+    cdta_alldata = cdta_alldata.fillna(0)
+
+    # Apply date filter (optional)
+    cdta_alldata = cdta_alldata.loc[
+        (cdta_alldata.index.get_level_values(1).month <=10) &
+        (cdta_alldata.index.get_level_values(1).month >= 6)
+    ]
+
+    return cdta_alldata
