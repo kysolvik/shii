@@ -131,8 +131,22 @@ def prepare_ems_calls(app_token, year_range=range(2010, 2026), output_path='ems_
     return heat_df
 
 
+def compute_rolling(df, variables, window, metric='sum'):
+    group_roll_df = (df
+                     .reset_index()
+                     .set_index('date')
+                     .groupby('cdta')[variables]
+                     .rolling(window=window, min_periods=0)
+    )
+    if metric == 'sum':
+        out_df = group_roll_df.sum()
+    elif metric == 'mean':
+        out_df = group_roll_df.mean()
+    else:
+        raise ValueError("'metric' must be one of: 'mean', 'sum'")
+    return out_df
 
-def preprocess_merged_df(
+def preprocess_merge_df(
         ems_df,
         all_311_df,
         date_start='2010-01-01',
@@ -166,11 +180,11 @@ def preprocess_merged_df(
     date_df = pd.DataFrame({'date':date_range}).set_index('date')
 
     # Get 311 counts by cdta
-    cdta_311_counts = all_311_df.groupby(['boro_cd', 'date', 'complaint_type']).size()
+    cdta_311_counts = all_311_df.groupby(['boro_cd', 'date', 'request_type']).size()
     cdta_311_counts.name = '311_counts'
     cdta_311_counts = cdta_311_counts.reset_index()
     cdta_311_counts = cdta_311_counts.rename(columns={'boro_cd':'cdta'})
-    cdta_311_counts = cdta_311_counts.pivot(index=['cdta','date'], columns='complaint_type')['311_counts'].fillna(0).reset_index()
+    cdta_311_counts = cdta_311_counts.pivot(index=['cdta','date'], columns='request_type')['311_counts'].fillna(0).reset_index()
     all_dfs = []
     for cdta in cdta_311_counts['cdta'].unique():
         cdta_count = cdta_311_counts.loc[cdta_311_counts['cdta']==cdta].set_index('date').join(date_df, how='right')
@@ -178,7 +192,8 @@ def preprocess_merged_df(
         all_dfs.append(cdta_count)
     cdta_311_counts_filled = pd.concat(all_dfs).fillna(0)
 
-    all_dates = weather_df.index.unique()
+    # all_dates = weather_df.index.unique()
+    all_dates = date_range
     all_cdtas = cdtas['boro_cd'].unique()
 
     # Merge in weather
@@ -200,12 +215,15 @@ def preprocess_merged_df(
                       .size()
                       .rename('heat_ems_count')
                       ).reset_index()
+
     all_dfs = []
     for cdta in heat_inc_count['communitydistrict'].unique():
         cdta_count = heat_inc_count.loc[heat_inc_count['communitydistrict']==cdta].set_index('date').join(date_df, how='right')
         cdta_count['communitydistrict']= cdta
         all_dfs.append(cdta_count)
     heat_inc_count_filled = pd.concat(all_dfs).fillna(0)
+    heat_inc_count_filled = heat_inc_count_filled.rename(columns={'communitydistrict':'cdta'})
+    heat_inc_count_filled = heat_inc_count_filled.reset_index().set_index(['cdta','date'])
 
     # Merge in heat heat ems data
     cdta_alldata = cdta_311_hvi_weather.set_index(['cdta', 'date']).join(heat_inc_count_filled)
