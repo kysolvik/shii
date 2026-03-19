@@ -150,7 +150,8 @@ def preprocess_merge_df(
         ems_df,
         all_311_df,
         date_start='2010-01-01',
-        date_end = '2024-12-31'
+        date_end = '2024-12-31',
+        summer_only=False
     ):
     # Get aux data
     weather_df = _weather.download_weather('2010-01-01T00:00:00', '2025-12-31T23:59:59')
@@ -192,7 +193,6 @@ def preprocess_merge_df(
         all_dfs.append(cdta_count)
     cdta_311_counts_filled = pd.concat(all_dfs).fillna(0)
 
-    # all_dates = weather_df.index.unique()
     all_dates = date_range
     all_cdtas = cdtas['boro_cd'].unique()
 
@@ -232,9 +232,10 @@ def preprocess_merge_df(
     cdta_alldata = cdta_alldata.fillna(0)
 
     # Apply date filter (optional)
-    cdta_alldata = cdta_alldata.loc[
-        (cdta_alldata.index.get_level_values(1).month <=10) &
-        (cdta_alldata.index.get_level_values(1).month >= 6)
-    ]
+    if summer_only:
+        cdta_alldata = cdta_alldata.loc[
+            (cdta_alldata.index.get_level_values(1).month <=10) &
+            (cdta_alldata.index.get_level_values(1).month >= 6)
+        ]
 
     return cdta_alldata
