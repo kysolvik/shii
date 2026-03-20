@@ -166,7 +166,6 @@ def preprocess_merge_df(
     cdta_population['borough_code'] = cdta_population['borough'].map(CDTA_BOROUGH_LOOKUP)
     cdta_population['cdta'] = cdta_population['borough_code'].astype(str) + cdta_population['cd_number'].str.zfill(2)
 
-    all_311_df = gpd.read_file('./311_calls.gpkg')
     cdtas = cdtas.set_crs('EPSG:4326')
     all_311_df = all_311_df.sjoin(cdtas[['geometry', 'boro_cd']]) 
     # Separate FHE from rest of hydrant data
