@@ -19,6 +19,7 @@ export PATH="$HOME/.local/bin:$PATH"
 echo "==> Cloning repo..."
 git clone "$REPO_URL" "$APP_DIR"
 cd "$APP_DIR"
+git checkout dashboard
 
 echo "==> Installing Python dependencies..."
 uv sync
