@@ -8,7 +8,6 @@ import json
 import os
 
 import pandas as pd
-import geopandas as gpd
 from flask import Flask, jsonify, render_template, request
 
 app = Flask(__name__)
@@ -41,9 +40,8 @@ def _load_data():
     df['cdta'] = df['cdta'].astype(str)
 
     print("Loading community district geometry...")
-    gdf = gpd.read_file(geojson_path)
-    gdf['cdta'] = gdf['cdta'].astype(str)
-    geojson = json.loads(gdf[['cdta', 'geometry']].to_json())
+    with open(geojson_path) as f:
+        geojson = json.load(f)
 
     date_min = df['date'].min().strftime('%Y-%m-%d')
     date_max = df['date'].max().strftime('%Y-%m-%d')
