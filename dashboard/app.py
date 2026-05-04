@@ -17,11 +17,11 @@ DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
 # Category definitions matching compute_shii() in basic_figs.ipynb
 CATEGORIES = {
     'hydrant':     {'col': 'hydrant_all_norm_last3',    'threshold': 8.6,  'label': 'Hydrant (311)',     'color': '#D62828'},
-    'ventilation': {'col': 'ventilation_norm_last3',    'threshold': 0.8,  'label': 'Ventilation (311)', 'color': '#FCBF49'},
-    'ac':          {'col': 'ac_norm_last3',             'threshold': 0.0,  'label': 'AC (311)',           'color': '#2A9D8F'},
     'ems':         {'col': 'heat_ems_count_norm_last3', 'threshold': 0.5,  'label': 'Heat EMS',           'color': '#E9C46A'},
+    'ac':          {'col': 'ac_norm_last3',             'threshold': 0.0,  'label': 'AC (311)',           'color': '#2A9D8F'},
     'power':       {'col': 'power_norm_last3',          'threshold': 1.0,  'label': 'Power (311)',        'color': '#8338EC'},
     'tree':        {'col': 'tree_norm_last3',           'threshold': 2.6,  'label': 'Tree (311)',         'color': '#2DC653'},
+    'ventilation': {'col': 'ventilation_norm_last3',    'threshold': 0.8,  'label': 'Ventilation (311)', 'color': '#FCBF49'},
 }
 
 # ── Load data on startup ──────────────────────────────────────────────────────
