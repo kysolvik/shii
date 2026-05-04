@@ -1,4 +1,4 @@
-"""Flask dashboard for the NYC Summer Heat Impact Index (SHII).
+"""Flask dashboard for the NYC Social Heat Impact Index (SHII).
 
 Usage:
     uv run dashboard/app.py

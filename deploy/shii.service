@@ -1,0 +1,21 @@
+[Unit]
+Description=NYC SHII Dashboard
+After=network.target
+
+[Service]
+User=ubuntu
+Group=www-data
+WorkingDirectory=/home/ubuntu/shii
+Environment="PATH=/home/ubuntu/shii/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
+ExecStart=/home/ubuntu/shii/.venv/bin/gunicorn \
+    --workers 2 \
+    --bind unix:/run/shii/gunicorn.sock \
+    --access-logfile /var/log/shii/access.log \
+    --error-logfile /var/log/shii/error.log \
+    --timeout 120 \
+    wsgi:app
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
