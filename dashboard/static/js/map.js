@@ -65,7 +65,7 @@ function updateLegend() {
   let html = '';
   for (let i = 0; i <= max; i++) {
     const color = scoreColor(i, max);
-    const label = i === 0 ? '0 — No signal' : i === max ? `${max} — All selected` : String(i);
+    const label = i === 0 ? '0 — No signal' : i === max ? `${max} — All` : String(i);
     html += `<div class="legend-row"><span class="swatch" style="background:${color}"></span><span>${label}</span></div>`;
   }
   el.innerHTML = html;
