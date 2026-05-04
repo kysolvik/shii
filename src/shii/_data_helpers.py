@@ -52,7 +52,7 @@ def prepare_all_311_requests(app_token, year_range=range(2010, 2026), output_pat
                       'To create new download, either delete file or specify different output')
         all_requests_df =  gpd.read_file(output_path)
     else:
-        request_types = ['hydrant', 'ac', 'ventilation', 'power']
+        request_types = ['hydrant', 'ac', 'ventilation', 'power', 'tree']
 
         # Dictionary to hold dataframes for each request type
         request_dfs = {}
@@ -150,7 +150,7 @@ def preprocess_merge_df(
         ems_df,
         all_311_df,
         date_start='2010-01-01',
-        date_end = '2024-12-31',
+        date_end = '2025-12-31',
         summer_only=False
     ):
     # Get aux data
