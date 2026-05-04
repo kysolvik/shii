@@ -7,8 +7,7 @@ import pandas
 from datetime import datetime
 
 def _build_hydrant_where_clause() -> str:
-    """Build hydrant complaint where clause for query."""
-
+    """Build hydrant request where clause for query."""
     problem_detail_filter = [
         'Illegal Use of Fire Hydrant (CIN)',
         'Hydrant Running (WC3)',
@@ -23,26 +22,27 @@ def _build_hydrant_where_clause() -> str:
     return where_clause
 
 def _build_ac_where_clause() -> str:
-    """Build AC complaint where clause for query."""
-
-    # Build where clause for Fire Hydrant issues
+    """Build AC request where clause for query."""
     where_clause = "(descriptor = 'Air Conditioning Problem')"
 
     return where_clause
 
 def _build_ventilation_where_clause() -> str:
-    """Build ventilation complaint where clause for query."""
-
-    # Build where clause for Fire Hydrant issues
+    """Build ventilation request where clause for query."""
     where_clause = "(starts_with(lower(descriptor), 'ventilation'))"
 
     return where_clause
 
 def _build_power_where_clause() -> str:
-    """Build power complaint where clause for query."""
-
-    # Build where clause for Fire Hydrant issues
+    """Build power request where clause for query."""
     where_clause = "(lower(descriptor) = 'power outage')"
+
+    return where_clause
+
+def _build_tree_where_clause() -> str:
+    """Build tree request where clause for query."""
+    where_clause = "(lower(complaint_type) = 'new tree request')"
+
     return where_clause
 
 def _check_dates(start_timestamp: str, end_timestamp: str) -> str:
@@ -66,8 +66,8 @@ def _check_dates(start_timestamp: str, end_timestamp: str) -> str:
 
     return dataset_id
 
-def download_311_complaints(
-    complaint_type: str = None,
+def download_311_requests(
+    request_type: str = None,
     app_token: str = None,
     limit: int = None,
     start_timestamp: str = None,
@@ -75,7 +75,7 @@ def download_311_complaints(
     where_clause: str = None,
 ) -> pandas.DataFrame:
     """
-    Download 311 complaints from NYC Open Data based on a custom where clause.
+    Download 311 requests from NYC Open Data based on a custom where clause.
 
     Parameters
     ----------
@@ -88,19 +88,19 @@ def download_311_complaints(
         Filter incidents on or after this timestamp. If None, no lower bound is applied.
     end_timestamp : str, optional
         Filter incidents before this timestamp. If None, no upper bound is applied.
-    complaint_type : str, optional
-        Filter complaints by complaint type. If None, no complaint type filter is applied.
+    request_type : str, optional
+        Filter requests by request type. If None, no request type filter is applied.
     where_clause : str
         Custom SQL-like where clause to filter records.
 
     Returns
     -------
     pandas.DataFrame
-        DataFrame containing 311 complaints for the specified complaint type or where_clause.
+        DataFrame containing 311 requests for the specified request type or where_clause.
 
     Notes
     -----
-    The function queries the NYC 311 Complaints dataset using the
+    The function queries the NYC 311 requests dataset using the
     sodapy library.
 
     The dataset ID is "erm2-nwe9" from the NYC Open Data portal.
@@ -114,19 +114,21 @@ def download_311_complaints(
         timeout=600
     )
 
-    if complaint_type:
-        # Look up complaint where_clause
+    if request_type:
+        # Look up request where_clause
         # Could probably convert to dict lookup if more types are added
-        if complaint_type == 'hydrant':
+        if request_type == 'hydrant':
             where_clause = _build_hydrant_where_clause()
-        elif complaint_type == 'ac':
+        elif request_type == 'ac':
             where_clause = _build_ac_where_clause()
-        elif complaint_type == 'ventilation':
+        elif request_type == 'ventilation':
             where_clause = _build_ventilation_where_clause()
-        elif complaint_type == 'power':
+        elif request_type == 'power':
             where_clause = _build_power_where_clause()
+        elif request_type == 'tree':
+            where_clause = _build_tree_where_clause()
         else:
-            raise ValueError(f"Unsupported complaint_type: {complaint_type}\n"
+            raise ValueError(f"Unsupported request_type: {request_type}\n"
                              " Supported types are 'hydrant', 'ac', 'power', or 'ventilation'."
                              " Alternatively, use where_clause parameter for custom filtering.")
     elif where_clause is None:
@@ -162,6 +164,6 @@ def download_311_complaints(
         return df
 
     except Exception as e:
-        raise RuntimeError(f"Failed to download 311 complaints data: {e}") from e
+        raise RuntimeError(f"Failed to download 311 requests data: {e}") from e
     finally:
         client.close()
