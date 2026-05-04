@@ -41,7 +41,7 @@
     <div id="cat-list">
       {% for key, cat in categories.items() %}
       <label class="cat-row">
-        <input type="checkbox" class="cat-cb" data-key="{{ key }}" checked>
+        <input type="checkbox" class="cat-cb" data-key="{{ key }}" {{ 'checked' if key != 'ventilation' else '' }}>
         <span class="cat-dot" style="background:{{ cat.color }}"></span>
         <span class="cat-name">{{ cat.label }}</span>
         <span class="cat-thresh">&gt;{{ cat.threshold }}/100k</span>
@@ -53,15 +53,7 @@
   <!-- Legend -->
   <div class="panel-section">
     <div class="section-label">SHII SCORE</div>
-    <div id="legend">
-      <div class="legend-row"><span class="swatch" style="background:#f0f0f0"></span><span>0 — No signal</span></div>
-      <div class="legend-row"><span class="swatch" style="background:#fee5d9"></span><span>1</span></div>
-      <div class="legend-row"><span class="swatch" style="background:#fcae91"></span><span>2</span></div>
-      <div class="legend-row"><span class="swatch" style="background:#fb6a4a"></span><span>3</span></div>
-      <div class="legend-row"><span class="swatch" style="background:#de2d26"></span><span>4</span></div>
-      <div class="legend-row"><span class="swatch" style="background:#a50f15"></span><span>5</span></div>
-      <div class="legend-row"><span class="swatch" style="background:#67000d"></span><span>6 — All categories</span></div>
-    </div>
+    <div id="legend"></div>
     <div class="legend-note">Score = # thresholds exceeded among selected categories</div>
   </div>
 

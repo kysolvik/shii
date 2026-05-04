@@ -17,7 +17,7 @@ function cdtaLabel(cdta) {
 // ── State ─────────────────────────────────────────────────────────────────────
 
 let currentDate = DATE_MAX;
-let selectedCats = new Set(CAT_KEYS);
+let selectedCats = new Set(CAT_KEYS.filter(k => k !== 'ventilation'));
 let shiiData = {};
 let geoLayer = null;
 let playTimer = null;
@@ -39,8 +39,10 @@ document.getElementById('map').appendChild(loadingEl);
 
 // ── Colour helpers ────────────────────────────────────────────────────────────
 
-function scoreColor(score) {
-  return SCORE_COLORS[Math.min(Math.max(score, 0), SCORE_COLORS.length - 1)];
+function scoreColor(score, maxScore) {
+  if (score === 0 || maxScore === 0) return SCORE_COLORS[0];
+  const idx = Math.round((score / maxScore) * (SCORE_COLORS.length - 1));
+  return SCORE_COLORS[Math.min(idx, SCORE_COLORS.length - 1)];
 }
 
 function featureStyle(feature) {
@@ -48,12 +50,25 @@ function featureStyle(feature) {
   const d = shiiData[cdta];
   const score = d ? d.shii_total : 0;
   return {
-    fillColor: scoreColor(score),
+    fillColor: scoreColor(score, selectedCats.size),
     fillOpacity: score > 0 ? 0.80 : 0.15,
     color: '#555',
     weight: 0.6,
     opacity: 0.7,
   };
+}
+
+function updateLegend() {
+  const max = selectedCats.size;
+  const el = document.getElementById('legend');
+  if (max === 0) { el.innerHTML = '<div class="legend-row"><span class="swatch" style="background:#f0f0f0"></span><span>No categories selected</span></div>'; return; }
+  let html = '';
+  for (let i = 0; i <= max; i++) {
+    const color = scoreColor(i, max);
+    const label = i === 0 ? '0 — No signal' : i === max ? `${max} — All selected` : String(i);
+    html += `<div class="legend-row"><span class="swatch" style="background:${color}"></span><span>${label}</span></div>`;
+  }
+  el.innerHTML = html;
 }
 
 // ── Tooltip ───────────────────────────────────────────────────────────────────
@@ -69,7 +84,7 @@ function showTooltip(e, feature) {
   const maxScore = selectedCats.size;
 
   let html = `<div class="tt-title">${cdtaLabel(cdta)}</div>`;
-  html += `<div class="tt-score" style="color:${scoreColor(score)}">${score}</div>`;
+  html += `<div class="tt-score" style="color:${scoreColor(score, selectedCats.size)}">${score}</div>`;
   html += `<div class="tt-score-label">of ${maxScore} selected threshold${maxScore !== 1 ? 's' : ''} exceeded</div>`;
   html += `<div class="tt-cats">`;
 
@@ -214,6 +229,7 @@ function updateCategories() {
   selectedCats = new Set(
     [...document.querySelectorAll('.cat-cb:checked')].map(el => el.dataset.key)
   );
+  updateLegend();
   fetchShii();
 }
 
@@ -235,6 +251,7 @@ document.getElementById('btn-none').addEventListener('click', () => {
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 
 (async () => {
+  updateLegend();
   await loadGeometry();
   document.getElementById('date-picker').value = DATE_MAX;
   await fetchShii();
