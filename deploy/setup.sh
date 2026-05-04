@@ -43,6 +43,6 @@ sudo nginx -t
 sudo systemctl restart nginx
 
 echo ""
-echo "==> Done! Dashboard should be live at http://$(curl -s ifconfig.me)"
+echo "==> Done! Dashboard should be live at http://$(curl -4 ifconfig.me)"
 echo "    Check status: sudo systemctl status shii"
 echo "    View logs:    sudo journalctl -u shii -f"
