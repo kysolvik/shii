@@ -13,7 +13,7 @@ from flask import Flask, jsonify, render_template, request
 app = Flask(__name__)
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
-DATE_DEFAULT = "2024-06-01"
+DATE_DEFAULT = "2024-06-20"
 
 # Category definitions matching compute_shii() in basic_figs.ipynb
 CATEGORIES = {
