@@ -8,7 +8,6 @@ from datetime import datetime
 
 def _build_hydrant_where_clause() -> str:
     """Build hydrant request where clause for query."""
-
     problem_detail_filter = [
         'Illegal Use of Fire Hydrant (CIN)',
         'Hydrant Running (WC3)',
@@ -24,25 +23,26 @@ def _build_hydrant_where_clause() -> str:
 
 def _build_ac_where_clause() -> str:
     """Build AC request where clause for query."""
-
-    # Build where clause for Fire Hydrant issues
     where_clause = "(descriptor = 'Air Conditioning Problem')"
 
     return where_clause
 
 def _build_ventilation_where_clause() -> str:
     """Build ventilation request where clause for query."""
-
-    # Build where clause for Fire Hydrant issues
     where_clause = "(starts_with(lower(descriptor), 'ventilation'))"
 
     return where_clause
 
 def _build_power_where_clause() -> str:
     """Build power request where clause for query."""
-
-    # Build where clause for Fire Hydrant issues
     where_clause = "(lower(descriptor) = 'power outage')"
+
+    return where_clause
+
+def _build_tree_where_clause() -> str:
+    """Build tree request where clause for query."""
+    where_clause = "(lower(complaint_type) = 'new tree request')"
+
     return where_clause
 
 def _check_dates(start_timestamp: str, end_timestamp: str) -> str:
@@ -125,6 +125,8 @@ def download_311_requests(
             where_clause = _build_ventilation_where_clause()
         elif request_type == 'power':
             where_clause = _build_power_where_clause()
+        elif request_type == 'tree':
+            where_clause = _build_tree_where_clause()
         else:
             raise ValueError(f"Unsupported request_type: {request_type}\n"
                              " Supported types are 'hydrant', 'ac', 'power', or 'ventilation'."
