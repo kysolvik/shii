@@ -26,7 +26,7 @@ let allDates = [];   // sorted list of available date strings (YYYY-MM-DD)
 // ── Map init ──────────────────────────────────────────────────────────────────
 
 const map = L.map('map', { zoomControl: false }).setView([40.71, -73.97], 11);
-L.control.zoom({ position: 'topleft' }).addTo(map);
+L.control.zoom({ position: 'topright' }).addTo(map);
 
 L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
   attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; OSM contributors',
@@ -400,6 +400,15 @@ function closeTimeline() {
 }
 
 document.getElementById('timeline-close').addEventListener('click', closeTimeline);
+
+// ── Sidebar toggle ────────────────────────────────────────────────────────────
+
+const btnToggle = document.getElementById('btn-sidebar-toggle');
+btnToggle.addEventListener('click', () => {
+  const collapsed = document.body.classList.toggle('sidebar-collapsed');
+  btnToggle.innerHTML = collapsed ? '&#8250;' : '&#8249;';
+  setTimeout(() => map.invalidateSize(), 310);
+});
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 
