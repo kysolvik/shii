@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NYC Summer Heat Impact Index</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+<div id="sidebar">
+  <div id="sidebar-header">
+    <div id="title">NYC Summer Heat Impact Index</div>
+    <div id="subtitle">3-day rolling 311 &amp; EMS signal</div>
+  </div>
+
+  <!-- Date controls -->
+  <div class="panel-section">
+    <div class="section-label">DATE</div>
+    <div id="date-nav">
+      <button id="btn-prev" title="Previous day">&#8592;</button>
+      <input type="date" id="date-picker" min="{{ date_min }}" max="{{ date_max }}">
+      <button id="btn-next" title="Next day">&#8594;</button>
+    </div>
+    <div id="date-meta">
+      <span id="tmax-badge"></span>
+      <button id="btn-play" title="Animate forward">&#9654; Play</button>
+    </div>
+  </div>
+
+  <!-- Categories -->
+  <div class="panel-section">
+    <div class="section-label">
+      CATEGORIES
+      <span class="section-actions">
+        <button class="link-btn" id="btn-all">all</button>
+        <button class="link-btn" id="btn-none">none</button>
+      </span>
+    </div>
+    <div id="cat-list">
+      {% for key, cat in categories.items() %}
+      <label class="cat-row">
+        <input type="checkbox" class="cat-cb" data-key="{{ key }}" checked>
+        <span class="cat-dot" style="background:{{ cat.color }}"></span>
+        <span class="cat-name">{{ cat.label }}</span>
+        <span class="cat-thresh">&gt;{{ cat.threshold }}/100k</span>
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Legend -->
+  <div class="panel-section">
+    <div class="section-label">SHII SCORE</div>
+    <div id="legend">
+      <div class="legend-row"><span class="swatch" style="background:#f0f0f0"></span><span>0 — No signal</span></div>
+      <div class="legend-row"><span class="swatch" style="background:#fee5d9"></span><span>1</span></div>
+      <div class="legend-row"><span class="swatch" style="background:#fcae91"></span><span>2</span></div>
+      <div class="legend-row"><span class="swatch" style="background:#fb6a4a"></span><span>3</span></div>
+      <div class="legend-row"><span class="swatch" style="background:#de2d26"></span><span>4</span></div>
+      <div class="legend-row"><span class="swatch" style="background:#a50f15"></span><span>5</span></div>
+      <div class="legend-row"><span class="swatch" style="background:#67000d"></span><span>6 — All categories</span></div>
+    </div>
+    <div class="legend-note">Score = # thresholds exceeded among selected categories</div>
+  </div>
+
+  <div id="sidebar-footer">
+    Data: NYC Open Data · Meteostat<br>
+    Rolling window: 3 days ending on selected date
+  </div>
+</div>
+
+<!-- Tooltip -->
+<div id="tooltip" class="hidden"></div>
+
+<!-- Map -->
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  const DATE_MIN = "{{ date_min }}";
+  const DATE_MAX = "{{ date_max }}";
+  const CAT_CONFIG = {{ categories | tojson }};
+  const CAT_KEYS = Object.keys(CAT_CONFIG);
+</script>
+<script src="/static/js/map.js"></script>
+</body>
+</html>
