@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>NYC Social Heat Impact Index</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌡️</text></svg>">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="/static/css/style.css">
 </head>
@@ -69,10 +70,24 @@
 <!-- Map -->
 <div id="map"></div>
 
+<!-- Timeline panel -->
+<div id="timeline-panel" class="hidden">
+  <div id="timeline-header">
+    <span id="timeline-title"></span>
+    <button id="timeline-close" title="Close">✕</button>
+  </div>
+  <div id="timeline-chart-wrap">
+    <canvas id="timeline-chart"></canvas>
+  </div>
+</div>
+
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3/dist/chartjs-plugin-annotation.min.js"></script>
 <script>
   const DATE_MIN = "{{ date_min }}";
   const DATE_MAX = "{{ date_max }}";
+  const DATE_DEFAULT = "{{ date_default }}";
   const CAT_CONFIG = {{ categories | tojson }};
   const CAT_KEYS = Object.keys(CAT_CONFIG);
 </script>

@@ -16,7 +16,7 @@ function cdtaLabel(cdta) {
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
-let currentDate = DATE_MAX;
+let currentDate = DATE_DEFAULT;
 let selectedCats = new Set(CAT_KEYS.filter(k => k !== 'ventilation'));
 let shiiData = {};
 let geoLayer = null;
@@ -25,7 +25,8 @@ let allDates = [];   // sorted list of available date strings (YYYY-MM-DD)
 
 // ── Map init ──────────────────────────────────────────────────────────────────
 
-const map = L.map('map', { zoomControl: true }).setView([40.71, -73.97], 11);
+const map = L.map('map', { zoomControl: false }).setView([40.71, -73.97], 11);
+L.control.zoom({ position: 'topleft' }).addTo(map);
 
 L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
   attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; OSM contributors',
@@ -141,7 +142,7 @@ async function loadGeometry() {
       layer.on({
         mousemove(e) { showTooltip(e, feature); },
         mouseout()   { hideTooltip(); },
-        click()      { showTooltip({ originalEvent: { clientX: window.innerWidth / 2, clientY: window.innerHeight / 2 } }, feature); },
+        click()      { showTimeline(feature.properties.cdta); },
       });
     },
   }).addTo(map);
@@ -176,6 +177,20 @@ function setDate(dateStr) {
   currentDate = dateStr;
   document.getElementById('date-picker').value = dateStr;
   fetchShii();
+  if (selectedCdta) {
+    // Reload data on year change; otherwise just move the annotation line
+    if (currentDate.slice(0, 4) !== timelineYear) {
+      showTimeline(selectedCdta);
+    } else if (timelineChart) {
+      const idx = currentDateIdx(timelineChart.data.labels);
+      if (idx !== -1) {
+        const ann = timelineChart.options.plugins.annotation.annotations.currentDate;
+        ann.xMin = idx;
+        ann.xMax = idx;
+      }
+      timelineChart.update('none');
+    }
+  }
 }
 
 function stepDate(delta) {
@@ -231,6 +246,7 @@ function updateCategories() {
   );
   updateLegend();
   fetchShii();
+  if (selectedCdta) showTimeline(selectedCdta);
 }
 
 document.querySelectorAll('.cat-cb').forEach(cb =>
@@ -248,11 +264,148 @@ document.getElementById('btn-none').addEventListener('click', () => {
 });
 
 
+// ── Timeline ──────────────────────────────────────────────────────────────────
+
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+let timelineChart = null;
+let selectedCdta = null;
+let timelineYear = null;
+
+function currentDateIdx(labels) {
+  let idx = labels.indexOf(currentDate);
+  if (idx === -1) {
+    for (let i = labels.length - 1; i >= 0; i--) {
+      if (labels[i] <= currentDate) { idx = i; break; }
+    }
+  }
+  return idx;
+}
+
+async function showTimeline(cdta) {
+  selectedCdta = cdta;
+  const year = currentDate.slice(0, 4);
+  timelineYear = year;
+  const cats = [...selectedCats].join(',');
+
+  document.getElementById('timeline-title').textContent = `${cdtaLabel(cdta)} — ${year}`;
+  document.getElementById('timeline-panel').classList.remove('hidden');
+
+  const res = await fetch(`/api/timeline?cdta=${cdta}&year=${year}&categories=${cats}`);
+  const json = await res.json();
+  renderTimeline(json.data);
+}
+
+function renderTimeline(data) {
+  const dates  = data.map(d => d.date);
+  const scores = data.map(d => d.shii);
+  const tmax   = data.map(d => d.tmax);
+  const max    = selectedCats.size;
+  const colors = scores.map(s => scoreColor(s, max));
+
+  if (timelineChart) { timelineChart.destroy(); timelineChart = null; }
+  // Replace canvas to avoid stale context after destroy
+  const wrap = document.getElementById('timeline-chart-wrap');
+  wrap.innerHTML = '<canvas id="timeline-chart"></canvas>';
+  const ctx = document.getElementById('timeline-chart').getContext('2d');
+
+  timelineChart = new Chart(ctx, {
+    data: {
+      labels: dates,
+      datasets: [
+        {
+          type: 'bar',
+          label: 'SHII Score',
+          data: scores,
+          backgroundColor: colors,
+          borderWidth: 0,
+          barPercentage: 1.0,
+          categoryPercentage: 1.0,
+          yAxisID: 'y',
+          order: 2,
+        },
+        {
+          type: 'line',
+          label: 'Max Temp (°C)',
+          data: tmax,
+          borderColor: '#222',
+          borderWidth: 1.5,
+          pointRadius: 0,
+          tension: 0.3,
+          yAxisID: 'yTemp',
+          fill: false,
+          order: 1,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          mode: 'index',
+          intersect: false,
+          callbacks: {
+            title: items => items[0]?.label ?? '',
+            label: item => item.dataset.label + ': ' + item.raw,
+          },
+        },
+        annotation: {
+          annotations: {
+            currentDate: {
+              type: 'line',
+              xMin: currentDateIdx(dates),
+              xMax: currentDateIdx(dates),
+              borderColor: 'rgba(0,0,0,0.7)',
+              borderWidth: 2,
+              borderDash: [4, 3],
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          ticks: {
+            maxRotation: 0,
+            callback(_, i) {
+              const d = dates[i];
+              return d && d.slice(8) === '01' ? MONTHS[parseInt(d.slice(5, 7)) - 1] : '';
+            },
+          },
+          grid: { display: false },
+        },
+        y: {
+          min: 0,
+          max: Math.max(max, 1),
+          ticks: { stepSize: 1 },
+          title: { display: true, text: 'SHII', font: { size: 10 } },
+        },
+        yTemp: {
+          position: 'right',
+          grid: { drawOnChartArea: false },
+          title: { display: true, text: '°C', font: { size: 10 } },
+        },
+      },
+    },
+  });
+}
+
+function closeTimeline() {
+  selectedCdta = null;
+  timelineYear = null;
+  document.getElementById('timeline-panel').classList.add('hidden');
+  if (timelineChart) { timelineChart.destroy(); timelineChart = null; }
+}
+
+document.getElementById('timeline-close').addEventListener('click', closeTimeline);
+
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 
 (async () => {
   updateLegend();
   await loadGeometry();
-  document.getElementById('date-picker').value = DATE_MAX;
+  document.getElementById('date-picker').value = DATE_DEFAULT;
   await fetchShii();
 })();

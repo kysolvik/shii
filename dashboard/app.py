@@ -13,14 +13,15 @@ from flask import Flask, jsonify, render_template, request
 app = Flask(__name__)
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
+DATE_DEFAULT = "2024-06-01"
 
 # Category definitions matching compute_shii() in basic_figs.ipynb
 CATEGORIES = {
     'hydrant':     {'col': 'hydrant_all_norm_last3',    'threshold': 8.6,  'label': 'Hydrant (311)',     'color': '#D62828'},
-    'ems':         {'col': 'heat_ems_count_norm_last3', 'threshold': 0.5,  'label': 'Heat EMS',           'color': '#E9C46A'},
+    'ems':         {'col': 'heat_ems_count_norm_last3', 'threshold': 0.5,  'label': 'Heat Emergencies (EMS)', 'color': '#E9C46A'},
     'ac':          {'col': 'ac_norm_last3',             'threshold': 0.0,  'label': 'AC (311)',           'color': '#2A9D8F'},
     'power':       {'col': 'power_norm_last3',          'threshold': 1.0,  'label': 'Power (311)',        'color': '#8338EC'},
-    'tree':        {'col': 'tree_norm_last3',           'threshold': 2.6,  'label': 'Tree (311)',         'color': '#2DC653'},
+    'tree':        {'col': 'tree_norm_last3',           'threshold': 2.6,  'label': 'Tree Requests (311)',         'color': '#2DC653'},
     'ventilation': {'col': 'ventilation_norm_last3',    'threshold': 0.8,  'label': 'Ventilation (311)', 'color': '#FCBF49'},
 }
 
@@ -62,6 +63,7 @@ def index():
     return render_template(
         'index.html',
         date_min=DATE_MIN,
+        date_default=DATE_DEFAULT,
         date_max=DATE_MAX,
         categories=cats_for_template,
     )
@@ -76,7 +78,7 @@ def get_geometry():
 @app.route('/api/shii')
 def get_shii():
     """Return per-CDTA SHII scores for a given date and category selection."""
-    date_str = request.args.get('date', DATE_MAX)
+    date_str = request.args.get('date', DATE_DEFAULT)
     cats_param = request.args.get('categories', ','.join(CATEGORIES))
     selected = [c for c in cats_param.split(',') if c in CATEGORIES]
 
@@ -115,6 +117,38 @@ def get_shii():
         }
 
     return jsonify({'date': date_str, 'tmax': tmax, 'data': data})
+
+
+@app.route('/api/timeline')
+def get_timeline():
+    """Return daily SHII scores for one CDTA over a full year."""
+    cdta = request.args.get('cdta', '')
+    year = request.args.get('year', type=int)
+    cats_param = request.args.get('categories', ','.join(CATEGORIES))
+    selected = [c for c in cats_param.split(',') if c in CATEGORIES]
+
+    if not cdta or not year:
+        return jsonify({'error': 'cdta and year required'}), 400
+
+    mask = (roll_df['cdta'] == cdta) & (roll_df['date'].dt.year == year)
+    df = roll_df[mask].copy()
+    if df.empty:
+        return jsonify({'cdta': cdta, 'year': year, 'data': []})
+
+    for cat, cfg in CATEGORIES.items():
+        df[f'flag_{cat}'] = (df[cfg['col']] > cfg['threshold']).astype(int)
+
+    df['shii_total'] = df[[f'flag_{c}' for c in selected]].sum(axis=1) if selected else 0
+
+    data = [
+        {
+            'date': row['date'].strftime('%Y-%m-%d'),
+            'shii': int(row['shii_total']),
+            'tmax': round(float(row['tmax']), 1) if not pd.isna(row['tmax']) else None,
+        }
+        for _, row in df.sort_values('date').iterrows()
+    ]
+    return jsonify({'cdta': cdta, 'year': year, 'data': data})
 
 
 if __name__ == '__main__':
