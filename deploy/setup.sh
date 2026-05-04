@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Full one-time setup for a fresh Ubuntu 22.04 Lightsail instance.
-# Run as: bash setup.sh <github-repo-url>
-# Example: bash setup.sh https://github.com/yourname/shii.git
+# Run as: bash setup.sh <github-repo-url> <branch-name>
+# Example: bash setup.sh https://github.com/kysolvik/shii.git main
 set -euo pipefail
 
-REPO_URL="${1:?Usage: bash setup.sh <github-repo-url>}"
+REPO_URL=$1
+BRANCH=$2
 APP_DIR="/home/ubuntu/shii"
 SERVICE_NAME="shii"
 
@@ -19,7 +20,7 @@ export PATH="$HOME/.local/bin:$PATH"
 echo "==> Cloning repo..."
 git clone "$REPO_URL" "$APP_DIR"
 cd "$APP_DIR"
-git checkout dashboard
+git checkout "$BRANCH"
 
 echo "==> Installing Python dependencies..."
 uv sync
