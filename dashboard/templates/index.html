@@ -27,6 +27,10 @@
     <div id="date-meta">
       <span id="tmax-badge"></span>
       <button id="btn-play" title="Animate forward">&#9654; Play</button>
+      <button id="btn-go-live" title="Jump to most recent data">Go to Live</button>
+    </div>
+    <div id="ems-warning" class="hidden">
+      &#9888; EMS data not available after {{ ems_cutoff }}
     </div>
   </div>
 
@@ -41,7 +45,7 @@
     </div>
     <div id="cat-list">
       {% for key, cat in categories.items() %}
-      <label class="cat-row">
+      <label class="cat-row{% if key == 'ems' %} ems-row{% endif %}">
         <input type="checkbox" class="cat-cb" data-key="{{ key }}" {{ 'checked' if key != 'ventilation' else '' }}>
         <span class="cat-dot" style="background:{{ cat.color }}"></span>
         <span class="cat-name">{{ cat.label }}</span>
@@ -60,7 +64,8 @@
 
   <div id="sidebar-footer">
     Data: NYC Open Data · Meteostat<br>
-    Rolling window: 3 days ending on selected date
+    Rolling window: 3 days ending on selected date<br>
+    <span id="footer-live-note" class="hidden">Recent dates: 311 only (no live EMS)</span>
   </div>
 </div>
 
@@ -89,6 +94,7 @@
   const DATE_MIN = "{{ date_min }}";
   const DATE_MAX = "{{ date_max }}";
   const DATE_DEFAULT = "{{ date_default }}";
+  const EMS_CUTOFF = "{{ ems_cutoff }}";
   const CAT_CONFIG = {{ categories | tojson }};
   const CAT_KEYS = Object.keys(CAT_CONFIG);
 </script>

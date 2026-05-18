@@ -1,6 +1,5 @@
 /* ── Constants ───────────────────────────────────────────────────────────────
-   CAT_CONFIG and CAT_KEYS are injected by the template via inline <script>.
-   DATE_MIN / DATE_MAX are also injected.
+   CAT_CONFIG, CAT_KEYS, DATE_MIN, DATE_MAX, EMS_CUTOFF injected by template.
 */
 
 const SCORE_COLORS = ['#f0f0f0', '#fee5d9', '#fcae91', '#fb6a4a', '#de2d26', '#a50f15', '#67000d'];
@@ -11,7 +10,7 @@ function cdtaLabel(cdta) {
   const n = parseInt(cdta, 10);
   const boro = Math.floor(n / 100);
   const cd = n % 100;
-  return `${BOROUGHS[boro] || 'NYC'} CD ${cd}`;
+  return `${BOROUGHS[boro] || 'NYC'} CD ${cd}`;
 }
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -21,7 +20,8 @@ let selectedCats = new Set(CAT_KEYS.filter(k => k !== 'ventilation'));
 let shiiData = {};
 let geoLayer = null;
 let playTimer = null;
-let allDates = [];   // sorted list of available date strings (YYYY-MM-DD)
+let allDates = [];   // sorted list of every date string from DATE_MIN → DATE_MAX
+let fetchSeq = 0;    // incremented on every fetch; stale responses are discarded
 
 // ── Map init ──────────────────────────────────────────────────────────────────
 
@@ -38,6 +38,34 @@ loadingEl.id = 'loading';
 loadingEl.textContent = 'Loading…';
 document.getElementById('map').appendChild(loadingEl);
 
+// ── EMS availability ──────────────────────────────────────────────────────────
+
+function isPastEmsCutoff(dateStr) {
+  return dateStr > EMS_CUTOFF;
+}
+
+// Max score excludes EMS when it's unavailable for the current date.
+function effectiveMaxScore() {
+  if (isPastEmsCutoff(currentDate)) {
+    return [...selectedCats].filter(k => k !== 'ems').length;
+  }
+  return selectedCats.size;
+}
+
+function updateEmsState() {
+  const past = isPastEmsCutoff(currentDate);
+
+  document.getElementById('ems-warning').classList.toggle('hidden', !past);
+  document.getElementById('footer-live-note').classList.toggle('hidden', !past);
+
+  const emsCb = document.querySelector('.cat-cb[data-key="ems"]');
+  if (emsCb) {
+    emsCb.disabled = past;
+    if (past) emsCb.checked = false;
+    emsCb.closest('.cat-row').classList.toggle('live-unavailable', past);
+  }
+}
+
 // ── Colour helpers ────────────────────────────────────────────────────────────
 
 function scoreColor(score, maxScore) {
@@ -50,8 +78,9 @@ function featureStyle(feature) {
   const cdta = feature.properties.cdta;
   const d = shiiData[cdta];
   const score = d ? d.shii_total : 0;
+  const max = effectiveMaxScore();
   return {
-    fillColor: scoreColor(score, selectedCats.size),
+    fillColor: scoreColor(score, max),
     fillOpacity: score > 0 ? 0.80 : 0.15,
     color: '#555',
     weight: 0.6,
@@ -60,7 +89,7 @@ function featureStyle(feature) {
 }
 
 function updateLegend() {
-  const max = selectedCats.size;
+  const max = effectiveMaxScore();
   const el = document.getElementById('legend');
   if (max === 0) { el.innerHTML = '<div class="legend-row"><span class="swatch" style="background:#f0f0f0"></span><span>No categories selected</span></div>'; return; }
   let html = '';
@@ -82,10 +111,10 @@ function showTooltip(e, feature) {
   if (!d) { tooltip.classList.add('hidden'); return; }
 
   const score = d.shii_total;
-  const maxScore = selectedCats.size;
+  const maxScore = effectiveMaxScore();
 
   let html = `<div class="tt-title">${cdtaLabel(cdta)}</div>`;
-  html += `<div class="tt-score" style="color:${scoreColor(score, selectedCats.size)}">${score}</div>`;
+  html += `<div class="tt-score" style="color:${scoreColor(score, maxScore)}">${score}</div>`;
   html += `<div class="tt-score-label">of ${maxScore} selected threshold${maxScore !== 1 ? 's' : ''} exceeded</div>`;
   html += `<div class="tt-cats">`;
 
@@ -94,11 +123,14 @@ function showTooltip(e, feature) {
     const flag = d.flags[key];
     const val = d.vals[key];
     const active = selectedCats.has(key) && flag;
+    const valStr = (val === null || val === undefined)
+      ? '<span class="tt-val tt-na">&nbsp;N/A</span>'
+      : `<span class="tt-val">&nbsp;${val}/100k</span>`;
     html += `
       <div class="tt-cat ${active ? '' : 'inactive'}">
         <span class="tt-cat-dot" style="background:${cfg.color}"></span>
         <span>${cfg.label}</span>
-        <span class="tt-val">&nbsp;${val}/100k</span>
+        ${valStr}
         ${flag ? '<span>✓</span>' : ''}
       </div>`;
   }
@@ -113,7 +145,6 @@ function moveTooltip(e) {
   const raw = e.originalEvent || e;
   const x = raw.clientX;
   const y = raw.clientY;
-  // Flip to left/above if near viewport edge
   const vw = window.innerWidth;
   const vh = window.innerHeight;
   tooltip.style.left = (x + 230 > vw ? x - 234 : x + 14) + 'px';
@@ -128,7 +159,7 @@ async function loadGeometry() {
   const res = await fetch('/api/geometry');
   const geojson = await res.json();
 
-  // Build sorted list of dates from DATE_MIN → DATE_MAX
+  // Build sorted list of dates from DATE_MIN → DATE_MAX (now includes today)
   let d = new Date(DATE_MIN);
   const end = new Date(DATE_MAX);
   while (d <= end) {
@@ -151,13 +182,19 @@ async function loadGeometry() {
 // ── SHII data fetch ───────────────────────────────────────────────────────────
 
 async function fetchShii() {
+  const seq = ++fetchSeq;
   loadingEl.classList.remove('hidden');
+  loadingEl.textContent = isPastEmsCutoff(currentDate)
+    ? 'Fetching live 311 data…'
+    : 'Loading…';
+
   const cats = [...selectedCats].join(',');
   const res = await fetch(`/api/shii?date=${currentDate}&categories=${cats}`);
   const json = await res.json();
+
+  if (seq !== fetchSeq) return;  // a newer fetch has already taken over
   shiiData = json.data || {};
 
-  // Update temperature badge
   const tmaxEl = document.getElementById('tmax-badge');
   if (json.tmax != null) {
     tmaxEl.textContent = `🌡️ Max ${json.tmax}°C`;
@@ -166,6 +203,7 @@ async function fetchShii() {
   }
 
   if (geoLayer) geoLayer.setStyle(featureStyle);
+  loadingEl.textContent = 'Loading…';
   loadingEl.classList.add('hidden');
 }
 
@@ -176,9 +214,10 @@ function setDate(dateStr) {
   if (dateStr > DATE_MAX) dateStr = DATE_MAX;
   currentDate = dateStr;
   document.getElementById('date-picker').value = dateStr;
+  updateEmsState();
+  updateLegend();
   fetchShii();
   if (selectedCdta) {
-    // Reload data on year change; otherwise just move the annotation line
     if (currentDate.slice(0, 4) !== timelineYear) {
       showTimeline(selectedCdta);
     } else if (timelineChart) {
@@ -194,10 +233,14 @@ function setDate(dateStr) {
 }
 
 function stepDate(delta) {
-  const idx = allDates.indexOf(currentDate);
-  if (idx === -1) return;
-  const newIdx = Math.max(0, Math.min(allDates.length - 1, idx + delta));
-  setDate(allDates[newIdx]);
+  const [y, m, d] = currentDate.split('-').map(Number);
+  const next = new Date(y, m - 1, d + delta);   // local-time arithmetic, no DST issues
+  const newDate = [
+    next.getFullYear(),
+    String(next.getMonth() + 1).padStart(2, '0'),
+    String(next.getDate()).padStart(2, '0'),
+  ].join('-');
+  setDate(newDate);   // setDate clamps to DATE_MIN / DATE_MAX
 }
 
 document.getElementById('date-picker').addEventListener('change', e => setDate(e.target.value));
@@ -221,7 +264,6 @@ btnPlay.addEventListener('click', () => {
     btnPlay.textContent = '▶ Play';
     btnPlay.classList.remove('playing');
   } else {
-    // If at the end, restart from beginning
     if (currentDate === DATE_MAX) setDate(DATE_MIN);
     btnPlay.textContent = '⏸ Pause';
     btnPlay.classList.add('playing');
@@ -237,6 +279,8 @@ btnPlay.addEventListener('click', () => {
     }, 350);
   }
 });
+
+document.getElementById('btn-go-live').addEventListener('click', () => setDate(DATE_MAX));
 
 // ── Category toggles ──────────────────────────────────────────────────────────
 
@@ -254,7 +298,7 @@ document.querySelectorAll('.cat-cb').forEach(cb =>
 );
 
 document.getElementById('btn-all').addEventListener('click', () => {
-  document.querySelectorAll('.cat-cb').forEach(cb => cb.checked = true);
+  document.querySelectorAll('.cat-cb:not(:disabled)').forEach(cb => cb.checked = true);
   updateCategories();
 });
 
@@ -300,11 +344,10 @@ function renderTimeline(data) {
   const dates  = data.map(d => d.date);
   const scores = data.map(d => d.shii);
   const tmax   = data.map(d => d.tmax);
-  const max    = selectedCats.size;
+  const max    = effectiveMaxScore();
   const colors = scores.map(s => scoreColor(s, max));
 
   if (timelineChart) { timelineChart.destroy(); timelineChart = null; }
-  // Replace canvas to avoid stale context after destroy
   const wrap = document.getElementById('timeline-chart-wrap');
   wrap.innerHTML = '<canvas id="timeline-chart"></canvas>';
   const ctx = document.getElementById('timeline-chart').getContext('2d');
@@ -414,6 +457,7 @@ btnToggle.addEventListener('click', () => {
 
 (async () => {
   updateLegend();
+  updateEmsState();
   await loadGeometry();
   document.getElementById('date-picker').value = DATE_DEFAULT;
   await fetchShii();
