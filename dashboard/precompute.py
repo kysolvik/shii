@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Precompute SHII rolling data and save to disk.
 
-If data/roll_df.parquet already exists, skips the historical pipeline and only
-fetches new dates from the 311 API (up to today).  On a fresh install (no
-parquet), runs the full historical pipeline from examples/311_calls.gpkg and
-examples/ems_calls.csv first, then extends with live API data.
+Downloads 311 and EMS data from the NYC Open Data API (caches intermediate
+files in data/ so re-runs are fast), runs the historical pipeline, then
+extends the parquet with live 311 data up to today.
 
 Run before starting app.py:
     uv run dashboard/precompute.py
@@ -15,7 +14,6 @@ import sys
 import datetime as dt
 
 import pandas as pd
-import geopandas as gpd
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -26,7 +24,6 @@ import shii
 import live_compute
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
-EXAMPLES_DIR = os.path.join(os.path.dirname(__file__), '..', 'examples')
 
 ROLLING_DAYS = 3
 ROLLING_COLUMNS = [
@@ -44,18 +41,18 @@ ROLLING_COLUMNS = [
 def main():
     os.makedirs(DATA_DIR, exist_ok=True)
 
+    app_token = os.environ.get('NYC_OPEN_DATA_APP_TOKEN')
     out_parquet = os.path.join(DATA_DIR, 'roll_df.parquet')
     out_geojson = os.path.join(DATA_DIR, 'cdta.geojson')
 
     if os.path.exists(out_parquet):
-        print(f"Parquet found — skipping historical pipeline.")
+        print("Parquet found — skipping historical pipeline.")
         save_df = pd.read_parquet(out_parquet)
         save_df['date'] = pd.to_datetime(save_df['date'])
         save_df['cdta'] = save_df['cdta'].astype(str)
         print(f"  Loaded {len(save_df):,} rows, {save_df['date'].min().date()} → {save_df['date'].max().date()}")
     else:
-        print("No parquet found — running full historical pipeline from static cache files.")
-        save_df = _build_historical(out_parquet)
+        save_df = _build_historical(out_parquet, app_token)
 
     if not os.path.exists(out_geojson):
         print("Downloading community district geometry...")
@@ -69,19 +66,27 @@ def main():
         cdta_gdf.to_file(out_geojson, driver='GeoJSON')
         print(f"Saved geometry   → {out_geojson}  ({len(cdta_gdf)} districts)")
 
-    _extend_with_live_data(out_parquet, save_df)
+    _extend_with_live_data(out_parquet, save_df, app_token)
+
+    print("\nDone! Run  uv run dashboard/app.py  to start the server.")
 
 
-def _build_historical(out_parquet: str) -> pd.DataFrame:
-    """Build roll_df.parquet from static cache files (311_calls.gpkg + ems_calls.csv)."""
-    print("Loading 311 data from cache...")
-    all_311_df = gpd.read_file(os.path.join(EXAMPLES_DIR, '311_calls.gpkg'))
+def _build_historical(out_parquet: str, app_token) -> pd.DataFrame:
+    """Download 311 + EMS from API and build roll_df.parquet."""
+    print("Downloading 311 data (cached to data/311_calls.gpkg)...")
+    all_311_df = shii.prepare_all_311_requests(
+        app_token=app_token,
+        output_path=os.path.join(DATA_DIR, '311_calls.gpkg'),
+    )
     all_311_df['date'] = pd.to_datetime(all_311_df['date'])
     if all_311_df.crs is None:
         all_311_df = all_311_df.set_crs('EPSG:4326')
 
-    print("Loading EMS data from cache...")
-    heat_inc_df = pd.read_csv(os.path.join(EXAMPLES_DIR, 'ems_calls.csv'))
+    print("Downloading EMS data (cached to data/ems_calls.csv)...")
+    heat_inc_df = shii.prepare_ems_calls(
+        app_token=app_token,
+        output_path=os.path.join(DATA_DIR, 'ems_calls.csv'),
+    )
 
     print("Running pipeline (downloads weather + HVI + zone boundaries)...")
     full_df = shii.preprocess_merge_df(heat_inc_df, all_311_df, summer_only=False)
@@ -119,12 +124,9 @@ def _build_historical(out_parquet: str) -> pd.DataFrame:
     print(f"  Rows: {len(save_df):,}")
     return save_df
 
-    print("\nDone! Run  uv run dashboard/app.py  to start the server.")
 
-
-def _extend_with_live_data(out_parquet: str, save_df: pd.DataFrame) -> None:
+def _extend_with_live_data(out_parquet: str, save_df: pd.DataFrame, app_token) -> None:
     """Fetch live 311 data for dates after the parquet's last date through today and append."""
-    app_token = os.environ.get('NYC_OPEN_DATA_APP_TOKEN')
 
     last_date = save_df['date'].max().date()
     today = dt.date.today()
