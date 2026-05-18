@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
-"""Precompute SHII rolling data from cached 311 and EMS files and save to disk.
+"""Precompute SHII rolling data and save to disk.
 
-Run this once before starting app.py:
+If data/roll_df.parquet already exists, skips the historical pipeline and only
+fetches new dates from the 311 API (up to today).  On a fresh install (no
+parquet), runs the full historical pipeline from examples/311_calls.gpkg and
+examples/ems_calls.csv first, then extends with live API data.
+
+Run before starting app.py:
     uv run dashboard/precompute.py
 """
 
@@ -39,6 +44,36 @@ ROLLING_COLUMNS = [
 def main():
     os.makedirs(DATA_DIR, exist_ok=True)
 
+    out_parquet = os.path.join(DATA_DIR, 'roll_df.parquet')
+    out_geojson = os.path.join(DATA_DIR, 'cdta.geojson')
+
+    if os.path.exists(out_parquet):
+        print(f"Parquet found — skipping historical pipeline.")
+        save_df = pd.read_parquet(out_parquet)
+        save_df['date'] = pd.to_datetime(save_df['date'])
+        save_df['cdta'] = save_df['cdta'].astype(str)
+        print(f"  Loaded {len(save_df):,} rows, {save_df['date'].min().date()} → {save_df['date'].max().date()}")
+    else:
+        print("No parquet found — running full historical pipeline from static cache files.")
+        save_df = _build_historical(out_parquet)
+
+    if not os.path.exists(out_geojson):
+        print("Downloading community district geometry...")
+        cdta_gdf = shii.download_community_districts().rename(columns={'boro_cd': 'cdta'})
+        cdta_gdf = cdta_gdf[['cdta', 'geometry']]
+        if cdta_gdf.crs is None:
+            cdta_gdf = cdta_gdf.set_crs('EPSG:4326')
+        else:
+            cdta_gdf = cdta_gdf.to_crs('EPSG:4326')
+        cdta_gdf['cdta'] = cdta_gdf['cdta'].astype(str)
+        cdta_gdf.to_file(out_geojson, driver='GeoJSON')
+        print(f"Saved geometry   → {out_geojson}  ({len(cdta_gdf)} districts)")
+
+    _extend_with_live_data(out_parquet, save_df)
+
+
+def _build_historical(out_parquet: str) -> pd.DataFrame:
+    """Build roll_df.parquet from static cache files (311_calls.gpkg + ems_calls.csv)."""
     print("Loading 311 data from cache...")
     all_311_df = gpd.read_file(os.path.join(EXAMPLES_DIR, '311_calls.gpkg'))
     all_311_df['date'] = pd.to_datetime(all_311_df['date'])
@@ -51,7 +86,6 @@ def main():
     print("Running pipeline (downloads weather + HVI + zone boundaries)...")
     full_df = shii.preprocess_merge_df(heat_inc_df, all_311_df, summer_only=False)
 
-    # hydrant_all and normalised columns (same as notebook)
     full_df['hydrant_all'] = full_df['hydrant'] + full_df['fhe']
     pop = full_df['population'].replace(0, float('nan'))
     for col in ['ac', 'hydrant', 'hydrant_all', 'power', 'ventilation', 'fhe', 'heat_ems_count', 'tree']:
@@ -79,26 +113,11 @@ def main():
     save_df['date'] = pd.to_datetime(save_df['date'])
     save_df['cdta'] = save_df['cdta'].astype(str)
 
-    out_parquet = os.path.join(DATA_DIR, 'roll_df.parquet')
     save_df.to_parquet(out_parquet, index=False)
     print(f"Saved roll data  → {out_parquet}")
     print(f"  Date range: {save_df['date'].min().date()} → {save_df['date'].max().date()}")
     print(f"  Rows: {len(save_df):,}")
-
-    print("Downloading community district geometry...")
-    cdta_gdf = shii.download_community_districts().rename(columns={'boro_cd': 'cdta'})
-    cdta_gdf = cdta_gdf[['cdta', 'geometry']]
-    if cdta_gdf.crs is None:
-        cdta_gdf = cdta_gdf.set_crs('EPSG:4326')
-    else:
-        cdta_gdf = cdta_gdf.to_crs('EPSG:4326')
-    cdta_gdf['cdta'] = cdta_gdf['cdta'].astype(str)
-
-    out_geojson = os.path.join(DATA_DIR, 'cdta.geojson')
-    cdta_gdf.to_file(out_geojson, driver='GeoJSON')
-    print(f"Saved geometry   → {out_geojson}  ({len(cdta_gdf)} districts)")
-
-    _extend_with_live_data(out_parquet, save_df)
+    return save_df
 
     print("\nDone! Run  uv run dashboard/app.py  to start the server.")
 
