@@ -45,7 +45,14 @@ def main():
     out_parquet = os.path.join(DATA_DIR, 'roll_df.parquet')
     out_geojson = os.path.join(DATA_DIR, 'cdta.geojson')
 
-    save_df = _build_historical(out_parquet, app_token)
+    if os.path.exists(out_parquet):
+        print("Parquet found — skipping historical pipeline.")
+        save_df = pd.read_parquet(out_parquet)
+        save_df['date'] = pd.to_datetime(save_df['date'])
+        save_df['cdta'] = save_df['cdta'].astype(str)
+        print(f"  Loaded {len(save_df):,} rows, {save_df['date'].min().date()} → {save_df['date'].max().date()}")
+    else:
+        save_df = _build_historical(out_parquet, app_token)
 
     if not os.path.exists(out_geojson):
         print("Downloading community district geometry...")
