@@ -158,9 +158,12 @@ body.sidebar-collapsed #btn-sidebar-toggle {
 #date-meta {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 6px;
   min-height: 24px;
+}
+
+#btn-play {
+  margin-left: auto;
 }
 
 #tmax-badge {
@@ -182,6 +185,20 @@ body.sidebar-collapsed #btn-sidebar-toggle {
 
 #btn-play:hover { background: #2d2d4e; }
 #btn-play.playing { background: #b00020; }
+
+#btn-go-live {
+  background: #b00020;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 15px;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+#btn-go-live:hover { background: #8a0018; }
 
 /* ── Category list ─────────────────────────────────────────────────────────── */
 #cat-list {
@@ -385,6 +402,27 @@ body.sidebar-collapsed #timeline-panel {
 #timeline-chart-wrap {
   flex: 1;
   min-height: 0;
+}
+
+/* ── EMS unavailable (live territory) ──────────────────────────────────────── */
+#ems-warning.hidden { display: none; }
+#footer-live-note.hidden { display: none; }
+
+#ems-warning {
+  margin-top: 6px;
+  font-size: 13px;
+  color: #b00020;
+  line-height: 1.4;
+}
+
+.cat-row.live-unavailable {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.tt-na {
+  color: rgba(255,255,255,0.35);
+  font-style: italic;
 }
 
 /* ── Leaflet overrides ─────────────────────────────────────────────────────── */

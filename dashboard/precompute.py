@@ -70,7 +70,7 @@ def main():
         'heat_ems_count_norm', 'power_norm', 'tree_norm',
     ]
 
-    save_df = roll_df[shii_cols + display_cols].reset_index()
+    save_df = roll_df[shii_cols + display_cols + ['population']].reset_index()
     save_df['date'] = pd.to_datetime(save_df['date'])
     save_df['cdta'] = save_df['cdta'].astype(str)
 

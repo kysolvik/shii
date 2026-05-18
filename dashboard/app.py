@@ -4,28 +4,47 @@ Usage:
     uv run dashboard/app.py
 """
 
+import datetime as dt
 import json
+import logging
 import os
+import sys
+import threading
 
 import pandas as pd
+from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template, request
+
+load_dotenv()
+
+# Make dashboard/ importable whether app.py is run as a script or imported by
+# wsgi.py as dashboard.app.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import live_compute  # noqa: E402
+
+log = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+APP_TOKEN = os.environ.get('NYC_OPEN_DATA_APP_TOKEN')
 DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
-DATE_DEFAULT = "2024-06-20"
+DATE_DEFAULT = (dt.date.today() - dt.timedelta(days=1)).strftime('%Y-%m-%d')
+
+# Last date for which EMS data is actually available in the source dataset.
+# Dates after this show a warning and exclude EMS from scoring.
+EMS_LAST_VALID_DATE = "2025-08-31"
 
 # Category definitions matching compute_shii() in basic_figs.ipynb
 CATEGORIES = {
-    'hydrant':     {'col': 'hydrant_all_norm_last3',    'threshold': 8.6,  'label': 'Hydrant (311)',     'color': '#D62828'},
+    'hydrant':     {'col': 'hydrant_all_norm_last3',    'threshold': 8.6,  'label': 'Hydrant (311)',          'color': '#D62828'},
     'ems':         {'col': 'heat_ems_count_norm_last3', 'threshold': 0.5,  'label': 'Heat Emergencies (EMS)', 'color': '#E9C46A'},
-    'ac':          {'col': 'ac_norm_last3',             'threshold': 0.0,  'label': 'AC (311)',           'color': '#2A9D8F'},
-    'power':       {'col': 'power_norm_last3',          'threshold': 1.0,  'label': 'Power (311)',        'color': '#8338EC'},
-    'tree':        {'col': 'tree_norm_last3',           'threshold': 2.6,  'label': 'Tree Requests (311)',         'color': '#2DC653'},
-    'ventilation': {'col': 'ventilation_norm_last3',    'threshold': 0.8,  'label': 'Ventilation (311)', 'color': '#FCBF49'},
+    'ac':          {'col': 'ac_norm_last3',             'threshold': 0.0,  'label': 'AC (311)',               'color': '#2A9D8F'},
+    'power':       {'col': 'power_norm_last3',          'threshold': 1.0,  'label': 'Power (311)',            'color': '#8338EC'},
+    'tree':        {'col': 'tree_norm_last3',           'threshold': 2.6,  'label': 'Tree Requests (311)',    'color': '#2DC653'},
+    'ventilation': {'col': 'ventilation_norm_last3',    'threshold': 0.8,  'label': 'Ventilation (311)',      'color': '#FCBF49'},
 }
 
-# ── Load data on startup ──────────────────────────────────────────────────────
+# ── Load precomputed data on startup ──────────────────────────────────────────
 
 def _load_data():
     parquet_path = os.path.join(DATA_DIR, 'roll_df.parquet')
@@ -50,7 +69,58 @@ def _load_data():
     return df, geojson, date_min, date_max
 
 
-roll_df, cdta_geojson, DATE_MIN, DATE_MAX = _load_data()
+roll_df, cdta_geojson, DATE_MIN, PRECOMPUTED_DATE_MAX = _load_data()
+
+# The date picker extends to yesterday; EMS is reliable only up to EMS_LAST_VALID_DATE.
+DATE_MAX = (dt.date.today() - dt.timedelta(days=1)).strftime('%Y-%m-%d')
+PRECOMPUTED_DATE_MAX_TS = pd.Timestamp(PRECOMPUTED_DATE_MAX)
+
+
+# ── Background precompute of live dates ───────────────────────────────────────
+
+def _bg_precompute() -> None:
+    """Fill the live cache for every date from PRECOMPUTED_DATE_MAX+1 → yesterday."""
+    precomputed = dt.date.fromisoformat(PRECOMPUTED_DATE_MAX)
+    yesterday = dt.date.today() - dt.timedelta(days=1)
+    start = precomputed + dt.timedelta(days=1)
+    if start > yesterday:
+        log.info("live cache: precomputed data is already current, nothing to fetch")
+        return
+    log.info("live cache background precompute: %s → %s", start, yesterday)
+    live_compute.precompute_range(APP_TOKEN, start, yesterday)
+
+
+threading.Thread(target=_bg_precompute, daemon=True, name='live-precompute').start()
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _format_live_response(cdta_vals: dict, selected: list[str]) -> dict:
+    """Format live 311-only data into the same shape as the historical response."""
+    data: dict = {}
+    for cdta, vals in cdta_vals.items():
+        flags: dict = {}
+        for cat, cfg in CATEGORIES.items():
+            if cat == 'ems':
+                flags[cat] = 0
+            else:
+                flags[cat] = int(vals.get(cfg['col'], 0) > cfg['threshold'])
+
+        shii_total = sum(flags[c] for c in selected if c in flags and c != 'ems')
+
+        data[cdta] = {
+            'shii_total': shii_total,
+            'flags': flags,
+            'vals': {
+                cat: (
+                    None if cat == 'ems'
+                    else round(float(vals.get(CATEGORIES[cat]['col'], 0)), 2)
+                )
+                for cat in CATEGORIES
+            },
+        }
+    return data
+
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
@@ -65,6 +135,7 @@ def index():
         date_min=DATE_MIN,
         date_default=DATE_DEFAULT,
         date_max=DATE_MAX,
+        ems_cutoff=EMS_LAST_VALID_DATE,
         categories=cats_for_template,
     )
 
@@ -77,7 +148,12 @@ def get_geometry():
 
 @app.route('/api/shii')
 def get_shii():
-    """Return per-CDTA SHII scores for a given date and category selection."""
+    """Return per-CDTA SHII scores for a given date and category selection.
+
+    Dates within the precomputed range (≤ PRECOMPUTED_DATE_MAX) are served from
+    the parquet file.  More recent dates are served from the live 311 pipeline
+    (EMS always 0/null there).
+    """
     date_str = request.args.get('date', DATE_DEFAULT)
     cats_param = request.args.get('categories', ','.join(CATEGORIES))
     selected = [c for c in cats_param.split(',') if c in CATEGORIES]
@@ -87,15 +163,30 @@ def get_shii():
     except Exception:
         return jsonify({'error': 'Invalid date'}), 400
 
+    # ── Live path (date beyond precomputed data) ───────────────────────────
+    if target > PRECOMPUTED_DATE_MAX_TS:
+        try:
+            cdta_vals = live_compute.get_live_data(APP_TOKEN, date_str)
+        except Exception as exc:
+            log.exception("live_compute failed for %s", date_str)
+            return jsonify({'error': str(exc)}), 500
+
+        tmax = live_compute.get_live_tmax(date_str)
+
+        if not cdta_vals:
+            return jsonify({'date': date_str, 'tmax': tmax, 'data': {}, 'live': True})
+
+        data = _format_live_response(cdta_vals, selected)
+        return jsonify({'date': date_str, 'tmax': tmax, 'data': data, 'live': True})
+
+    # ── Historical path ────────────────────────────────────────────────────
     day = roll_df[roll_df['date'] == target].copy()
     if day.empty:
         return jsonify({'date': date_str, 'tmax': None, 'data': {}})
 
-    # Compute flags for all categories (so the tooltip can show unselected ones too)
     for cat, cfg in CATEGORIES.items():
         day[f'flag_{cat}'] = (day[cfg['col']] > cfg['threshold']).astype(int)
 
-    # SHII total counts only selected categories
     if selected:
         day['shii_total'] = day[[f'flag_{c}' for c in selected]].sum(axis=1)
     else:
