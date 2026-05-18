@@ -11,9 +11,14 @@ import datetime as dt
 
 import pandas as pd
 import geopandas as gpd
+from dotenv import load_dotenv
+
+load_dotenv()
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import shii
+import live_compute
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
 EXAMPLES_DIR = os.path.join(os.path.dirname(__file__), '..', 'examples')
@@ -93,7 +98,72 @@ def main():
     cdta_gdf.to_file(out_geojson, driver='GeoJSON')
     print(f"Saved geometry   → {out_geojson}  ({len(cdta_gdf)} districts)")
 
+    _extend_with_live_data(out_parquet, save_df)
+
     print("\nDone! Run  uv run dashboard/app.py  to start the server.")
+
+
+def _extend_with_live_data(out_parquet: str, save_df: pd.DataFrame) -> None:
+    """Fetch live 311 data for dates after the parquet's last date through today and append."""
+    app_token = os.environ.get('NYC_OPEN_DATA_APP_TOKEN')
+
+    last_date = save_df['date'].max().date()
+    today = dt.date.today()
+    start = last_date + dt.timedelta(days=1)
+
+    if start > today:
+        print("Parquet is already current through today.")
+        return
+
+    print(f"Fetching live 311 data {start} → {today}...")
+    result = live_compute._fetch_and_process(app_token, start, today)
+    if not result:
+        print("No live data returned.")
+        return
+
+    pop_series = save_df.groupby('cdta')['population'].first()
+
+    tmax_by_date: dict = {}
+    try:
+        weather_df = shii.download_weather(f"{start}T00:00:00", f"{today}T23:59:59")
+        if not weather_df.empty and 'tmax' in weather_df.columns:
+            for idx, row in weather_df.iterrows():
+                t = row['tmax']
+                tmax_by_date[idx.strftime('%Y-%m-%d')] = (
+                    round(float(t), 1) if t is not None and not pd.isna(t) else None
+                )
+    except Exception as exc:
+        print(f"  Warning: weather fetch failed ({exc}); tmax will be null for live dates")
+
+    live_rows = []
+    for date_str, cdta_data in result.items():
+        tmax = tmax_by_date.get(date_str)
+        for cdta_str, vals in cdta_data.items():
+            live_rows.append({
+                'cdta': cdta_str,
+                'date': pd.Timestamp(date_str),
+                'hydrant_all_norm_last3': vals.get('hydrant_all_norm_last3', 0.0),
+                'ventilation_norm_last3': vals.get('ventilation_norm_last3', 0.0),
+                'ac_norm_last3':          vals.get('ac_norm_last3', 0.0),
+                'heat_ems_count_norm_last3': 0.0,
+                'power_norm_last3':       vals.get('power_norm_last3', 0.0),
+                'tree_norm_last3':        vals.get('tree_norm_last3', 0.0),
+                'tmax': tmax,
+                'hydrant_all_norm': 0.0,
+                'ventilation_norm': 0.0,
+                'ac_norm': 0.0,
+                'heat_ems_count_norm': 0.0,
+                'power_norm': 0.0,
+                'tree_norm': 0.0,
+                'population': float(pop_series.get(cdta_str, 0)),
+            })
+
+    live_df = pd.DataFrame(live_rows)
+    combined = pd.concat([save_df, live_df], ignore_index=True)
+    combined.to_parquet(out_parquet, index=False)
+    print(f"Appended {len(result)} live date(s) ({start} → {today})")
+    print(f"  Updated date range: {combined['date'].min().date()} → {combined['date'].max().date()}")
+    print(f"  Rows: {len(combined):,}")
 
 
 if __name__ == '__main__':
