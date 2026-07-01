@@ -16,7 +16,10 @@ function cdtaLabel(cdta) {
 // ── State ─────────────────────────────────────────────────────────────────────
 
 let currentDate = DATE_DEFAULT;
-let selectedCats = new Set(CAT_KEYS.filter(k => k !== 'ventilation'));
+// Mirror the checkboxes the template rendered as checked (single source of truth).
+let selectedCats = new Set(
+  [...document.querySelectorAll('.cat-cb:checked')].map(el => el.dataset.key)
+);
 let shiiData = {};
 let geoLayer = null;
 let playTimer = null;
