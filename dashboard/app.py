@@ -28,7 +28,16 @@ app = Flask(__name__)
 
 APP_TOKEN = os.environ.get('NYC_OPEN_DATA_APP_TOKEN')
 DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
-DATE_DEFAULT = (dt.date.today() - dt.timedelta(days=1)).strftime('%Y-%m-%d')
+
+
+def _latest_available_date() -> str:
+    """Most recent date the dashboard can show: yesterday.
+
+    Recomputed on every request (never cached at import) so the date picker
+    advances each day even though gunicorn keeps the process alive for weeks.
+    The live pipeline in live_compute already serves fresh data for these dates.
+    """
+    return (dt.date.today() - dt.timedelta(days=1)).strftime('%Y-%m-%d')
 
 # Last date for which EMS data is actually available in the source dataset.
 # Dates after this show a warning and exclude EMS from scoring.
@@ -36,12 +45,12 @@ EMS_LAST_VALID_DATE = "2025-08-31"
 
 # Category definitions matching compute_shii() in basic_figs.ipynb
 CATEGORIES = {
-    'hydrant':     {'col': 'hydrant_all_norm_last3',    'threshold': 8.6,  'label': 'Hydrant (311)',          'color': '#D62828'},
     'ems':         {'col': 'heat_ems_count_norm_last3', 'threshold': 0.5,  'label': 'Heat Emergencies (EMS)', 'color': '#E9C46A'},
-    'ac':          {'col': 'ac_norm_last3',             'threshold': 0.0,  'label': 'AC (311)',               'color': '#2A9D8F'},
+    'hydrant':     {'col': 'hydrant_all_norm_last3',    'threshold': 8.6,  'label': 'Hydrant (311)',          'color': '#D62828'},
     'power':       {'col': 'power_norm_last3',          'threshold': 1.0,  'label': 'Power (311)',            'color': '#8338EC'},
-    'tree':        {'col': 'tree_norm_last3',           'threshold': 2.6,  'label': 'Tree Requests (311)',    'color': '#2DC653'},
     'ventilation': {'col': 'ventilation_norm_last3',    'threshold': 0.8,  'label': 'Ventilation (311)',      'color': '#FCBF49'},
+    'ac':          {'col': 'ac_norm_last3',             'threshold': 0.0,  'label': 'AC (311)',               'color': '#2A9D8F'},
+    'tree':        {'col': 'tree_norm_last3',           'threshold': 2.6,  'label': 'Tree Requests (311)',    'color': '#2DC653'},
 }
 
 # ── Load precomputed data on startup ──────────────────────────────────────────
@@ -71,8 +80,8 @@ def _load_data():
 
 roll_df, cdta_geojson, DATE_MIN, PRECOMPUTED_DATE_MAX = _load_data()
 
-# The date picker extends to yesterday; EMS is reliable only up to EMS_LAST_VALID_DATE.
-DATE_MAX = (dt.date.today() - dt.timedelta(days=1)).strftime('%Y-%m-%d')
+# The date picker extends to yesterday (see _latest_available_date); EMS is
+# reliable only up to EMS_LAST_VALID_DATE.
 PRECOMPUTED_DATE_MAX_TS = pd.Timestamp(PRECOMPUTED_DATE_MAX)
 
 
@@ -130,11 +139,12 @@ def index():
         k: {'label': v['label'], 'threshold': v['threshold'], 'color': v['color']}
         for k, v in CATEGORIES.items()
     }
+    latest = _latest_available_date()
     return render_template(
         'index.html',
         date_min=DATE_MIN,
-        date_default=DATE_DEFAULT,
-        date_max=DATE_MAX,
+        date_default=latest,
+        date_max=latest,
         ems_cutoff=EMS_LAST_VALID_DATE,
         categories=cats_for_template,
     )
@@ -154,7 +164,7 @@ def get_shii():
     the parquet file.  More recent dates are served from the live 311 pipeline
     (EMS always 0/null there).
     """
-    date_str = request.args.get('date', DATE_DEFAULT)
+    date_str = request.args.get('date', _latest_available_date())
     cats_param = request.args.get('categories', ','.join(CATEGORIES))
     selected = [c for c in cats_param.split(',') if c in CATEGORIES]
 

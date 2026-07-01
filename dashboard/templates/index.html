@@ -46,7 +46,7 @@
     <div id="cat-list">
       {% for key, cat in categories.items() %}
       <label class="cat-row{% if key == 'ems' %} ems-row{% endif %}">
-        <input type="checkbox" class="cat-cb" data-key="{{ key }}" {{ 'checked' if key != 'ventilation' else '' }}>
+        <input type="checkbox" class="cat-cb" data-key="{{ key }}" {{ 'checked' if key in ['ems', 'hydrant', 'power', 'ventilation'] else '' }}>
         <span class="cat-dot" style="background:{{ cat.color }}"></span>
         <span class="cat-name">{{ cat.label }}</span>
         <span class="cat-thresh">&gt;{{ cat.threshold }}/100k</span>
@@ -96,7 +96,10 @@
   const DATE_DEFAULT = "{{ date_default }}";
   const EMS_CUTOFF = "{{ ems_cutoff }}";
   const CAT_CONFIG = {{ categories | tojson }};
-  const CAT_KEYS = Object.keys(CAT_CONFIG);
+  // Explicit key order — the tojson filter sorts CAT_CONFIG's keys alphabetically,
+  // so derive display order from the CATEGORIES dict order instead (a JSON list
+  // preserves order). Drives the sidebar/tooltip category ordering.
+  const CAT_KEYS = {{ categories.keys() | list | tojson }};
 </script>
 <script src="/static/js/map.js"></script>
 </body>
