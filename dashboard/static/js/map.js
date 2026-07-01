@@ -25,6 +25,19 @@ let geoLayer = null;
 let playTimer = null;
 let allDates = [];   // sorted list of every date string from DATE_MIN → DATE_MAX
 let fetchSeq = 0;    // incremented on every fetch; stale responses are discarded
+let loadingTimer = null;   // delays the loading popup so fast fetches don't flicker it
+
+// Only show the loading popup once a fetch has been pending this long. Fast
+// (precomputed) fetches finish first, so the popup stays hidden — e.g. during
+// "play" it no longer flickers on/off for every date step.
+const LOADING_DELAY_MS = 1000;
+
+// Start with the sidebar collapsed on narrow/mobile screens. Set before map init
+// so the map container is already full-width when Leaflet measures it (no load
+// animation, no invalidateSize needed). The toggle button arrow is synced below.
+if (window.matchMedia('(max-width: 768px)').matches) {
+  document.body.classList.add('sidebar-collapsed');
+}
 
 // ── Map init ──────────────────────────────────────────────────────────────────
 
@@ -184,18 +197,29 @@ async function loadGeometry() {
 
 // ── SHII data fetch ───────────────────────────────────────────────────────────
 
+function hideLoading() {
+  clearTimeout(loadingTimer);
+  loadingTimer = null;
+  loadingEl.classList.add('hidden');
+}
+
 async function fetchShii() {
   const seq = ++fetchSeq;
-  loadingEl.classList.remove('hidden');
-  loadingEl.textContent = isPastEmsCutoff(currentDate)
-    ? 'Fetching live 311 data…'
-    : 'Loading…';
+  // Show the popup only if this fetch is still pending after LOADING_DELAY_MS,
+  // so quick precomputed fetches never flash it on and off.
+  clearTimeout(loadingTimer);
+  loadingTimer = setTimeout(() => {
+    loadingEl.textContent = isPastEmsCutoff(currentDate)
+      ? 'Fetching live 311 data…'
+      : 'Loading…';
+    loadingEl.classList.remove('hidden');
+  }, LOADING_DELAY_MS);
 
   const cats = [...selectedCats].join(',');
   const res = await fetch(`/api/shii?date=${currentDate}&categories=${cats}`);
   const json = await res.json();
 
-  if (seq !== fetchSeq) return;  // a newer fetch has already taken over
+  if (seq !== fetchSeq) return;  // a newer fetch has already taken over (it owns the popup)
   shiiData = json.data || {};
 
   const tmaxEl = document.getElementById('tmax-badge');
@@ -206,8 +230,7 @@ async function fetchShii() {
   }
 
   if (geoLayer) geoLayer.setStyle(featureStyle);
-  loadingEl.textContent = 'Loading…';
-  loadingEl.classList.add('hidden');
+  hideLoading();
 }
 
 // ── Date navigation ───────────────────────────────────────────────────────────
@@ -450,6 +473,10 @@ document.getElementById('timeline-close').addEventListener('click', closeTimelin
 // ── Sidebar toggle ────────────────────────────────────────────────────────────
 
 const btnToggle = document.getElementById('btn-sidebar-toggle');
+// Match the arrow to the initial state (collapsed by default on narrow screens).
+if (document.body.classList.contains('sidebar-collapsed')) {
+  btnToggle.innerHTML = '&#8250;';
+}
 btnToggle.addEventListener('click', () => {
   const collapsed = document.body.classList.toggle('sidebar-collapsed');
   btnToggle.innerHTML = collapsed ? '&#8250;' : '&#8249;';
