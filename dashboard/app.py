@@ -43,6 +43,10 @@ def _latest_available_date() -> str:
 # Dates after this show a warning and exclude EMS from scoring.
 EMS_LAST_VALID_DATE = "2025-08-31"
 
+# Date the picker opens on. Chosen before EMS_LAST_VALID_DATE so EMS is available
+# (and stays checked) on load; the picker still extends to yesterday via date_max.
+DATE_DEFAULT = "2025-06-24"
+
 # Category definitions matching compute_shii() in basic_figs.ipynb
 CATEGORIES = {
     'ems':         {'col': 'heat_ems_count_norm_last3', 'threshold': 0.5,  'label': 'Heat Emergencies (EMS)', 'color': '#E9C46A'},
@@ -143,7 +147,7 @@ def index():
     return render_template(
         'index.html',
         date_min=DATE_MIN,
-        date_default=latest,
+        date_default=DATE_DEFAULT,
         date_max=latest,
         ems_cutoff=EMS_LAST_VALID_DATE,
         categories=cats_for_template,
